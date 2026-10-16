@@ -6,9 +6,14 @@ RUN npm ci
 FROM node:24-alpine AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# Variables del proyecto (las pasa docker-compose): next.config.ts las incrusta en el bundle
+ARG GCP_PROJECT_ID
+ARG FIREBASE_PROJECT_ID
+ARG FIREBASE_API_KEY
+ARG FIREBASE_APP_ID
+ARG FIREBASE_AUTH_DOMAIN
+ARG BACKEND_PUBLIC_URL
 COPY --from=deps /app/node_modules ./node_modules
-# Incluye .env.local: las variables NEXT_PUBLIC_* (config de Firebase y URL del backend)
-# se incrustan en el bundle durante `next build`
 COPY . .
 RUN npm run build
 

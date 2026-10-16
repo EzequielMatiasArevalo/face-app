@@ -41,6 +41,18 @@ task_manager = TaskManager()
 # hilos para no bloquear el event loop (/status y /me siguen respondiendo mientras se procesa).
 inference_pool = ThreadPoolExecutor(max_workers=settings.max_workers, thread_name_prefix="jobs")
 
+if settings.storage_backend == "gcs":
+    if not settings.gcs_bucket:
+        raise ValueError("GCS_BUCKET is required when STORAGE_BACKEND=gcs")
+    blob_store = GCSBlobStore(
+        bucket=settings.gcs_bucket,
+        project=settings.gcp_project_id,
+        impersonate_service_account=settings.gcs_service_account,
+        prefix=settings.storage_prefix,
+    )
+else:
+    blob_store = LocalBlobStore(settings.output_path, prefix=settings.storage_prefix)
+
 if settings.use_pgvector:
     logger.info("Using PostgreSQL vector store")
     embedding_store = PgVectorEmbeddingStore(
@@ -63,17 +75,6 @@ app_db = AppDB(
     user=settings.postgres_user,
     password=settings.postgres_password,
 )
-
-if settings.storage_backend == "gcs":
-    blob_store = GCSBlobStore(
-        bucket=settings.gcs_bucket,
-        project=settings.gcs_project,
-        impersonate_service_account=settings.gcs_service_account,
-        prefix=settings.storage_prefix,
-    )
-else:
-    blob_store = LocalBlobStore(settings.output_path, prefix=settings.storage_prefix)
-
 
 def _resolved_model_path() -> Path:
     """MODEL_PATH may be a directory; join with MODEL_NAME when set."""

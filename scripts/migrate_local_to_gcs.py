@@ -43,7 +43,7 @@ def main() -> None:
     output = Path(args.output)
     dry = args.dry_run
 
-    store = GCSBlobStore(settings.gcs_bucket, settings.gcs_project, settings.gcs_service_account, settings.storage_prefix)
+    store = GCSBlobStore(settings.gcs_bucket, settings.gcp_project_id, settings.gcs_service_account, settings.storage_prefix)
     db = AppDB(settings.postgres_host, settings.postgres_port, settings.postgres_db, settings.postgres_user, settings.postgres_password)
     raw = connect(
         host=settings.postgres_host, port=settings.postgres_port, dbname=settings.postgres_db,

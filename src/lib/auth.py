@@ -25,7 +25,7 @@ class _PublicKeysOnly(credentials.Base):
 
 
 if not settings.firebase_project_id:
-    raise ValueError("FIREBASE_PROJECT_ID is required to verify Firebase ID tokens")
+    raise ValueError("GCP_PROJECT_ID (or FIREBASE_PROJECT_ID) is required to verify Firebase ID tokens")
 
 _firebase_app = firebase_admin.initialize_app(
     _PublicKeysOnly(),

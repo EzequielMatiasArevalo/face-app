@@ -13,7 +13,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    # Una variable vacía cuenta como no definida: docker-compose pasa vacías las que no se exportaron
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", env_ignore_empty=True)
 
     cors_origins: str = Field(
         default="*",
@@ -44,14 +45,16 @@ class Settings(BaseSettings):
     max_workers: int = os.getenv("MAX_WORKERS", 2)
     face_size: int = os.getenv("FACE_SIZE", 112)
     embedding_dim: int = os.getenv("EMBEDDING_DIM", 512)
-    # Proyecto de Firebase cuyos ID tokens acepta el backend (Firebase Auth)
-    firebase_project_id: str | None = os.getenv("FIREBASE_PROJECT_ID")
+    # Valores propios de cada despliegue: se exportan en la shell o en ./.env (ver .env.example y README)
+    # Proyecto de Google Cloud (Firebase Auth y GCS)
+    gcp_project_id: str | None = os.getenv("GCP_PROJECT_ID") or None
+    # Proyecto de Firebase cuyos ID tokens acepta el backend: por defecto GCP_PROJECT_ID (otro para el emulador)
+    firebase_project_id: str | None = os.getenv("FIREBASE_PROJECT_ID") or os.getenv("GCP_PROJECT_ID") or None
     # Emails (verificados) que siempre son administradores, separados por coma
     admin_emails: str = os.getenv("ADMIN_EMAILS", "")
     # Almacenamiento de imágenes: "gcs" (bucket) o "local" (carpeta OUTPUT_PATH, para desarrollo sin GCP)
     storage_backend: str = os.getenv("STORAGE_BACKEND", "gcs")
-    gcs_bucket: str = os.getenv("GCS_BUCKET", "face-recoginition")
-    gcs_project: str | None = os.getenv("GCS_PROJECT") or os.getenv("FIREBASE_PROJECT_ID")
+    gcs_bucket: str | None = os.getenv("GCS_BUCKET") or None
     # Service account a impersonar con las credenciales por defecto (vacío: usar ADC directamente)
     gcs_service_account: str | None = os.getenv("GCS_SERVICE_ACCOUNT") or None
     # Prefijo para todos los objetos (permite aislar entornos dentro del mismo bucket)
