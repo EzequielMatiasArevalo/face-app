@@ -331,4 +331,51 @@ All endpoints except `/health` require `Authorization: Bearer <Firebase ID token
 - `SIMILARITY_THRESHOLD` (0.4 in Docker, 0.55 locally) has not been calibrated for `glintr100`.
 - AI detection is heuristic; see the limitations above.
 - Any Google account can sign in; there is no domain restriction.
-- Job state is in memory, so the backend cannot be scaled to more than one instance as is.
+- Job state is in memory, so the backend cannot be scaled to more than one instance as is (see the roadmap below).
+
+## Roadmap: production architecture (TODO)
+
+Today everything runs as one Docker Compose stack on a single machine. The goal is a backend that scales on demand on Cloud Run, with PostgreSQL in a private Cloud SQL instance:
+
+```mermaid
+flowchart LR
+    B[Browser] --> FE[Frontend<br/>Cloud Run or Firebase App Hosting]
+    B -- REST --> API[API service<br/>Cloud Run, autoscaling]
+    B -- signed URL upload --> G[(GCS bucket)]
+    API -- enqueue job --> Q[Cloud Tasks]
+    Q --> W[Worker service<br/>Cloud Run, CPU inference]
+    API & W -- Direct VPC egress --> SQL[(Cloud SQL PostgreSQL<br/>private IP + pgvector)]
+    API & W --> G
+    SM[Secret Manager] -.-> API & W
+```
+
+### Backend on Cloud Run
+
+- [ ] **Persist job state.** Move jobs from memory to a Postgres table (owner, status, source, result, error), so any instance can answer `/status`. This is required before running more than one instance.
+- [ ] **Run inference inside a request, not after it.** The current jobs keep working after the `202` response, but with request-based billing Cloud Run throttles the CPU once the response is sent. Enqueue each job with Cloud Tasks (or Pub/Sub) to a separate worker service that does the work within its own request, and keep the API service light. The quick alternative is instance-based billing (CPU always allocated).
+- [ ] **Tune autoscaling.**
+  - Inference is CPU-bound, so set the worker's concurrency and `MAX_WORKERS` close to its vCPU count.
+  - Keep at least one minimum instance to avoid cold starts that load ~500 MB of models.
+  - Cap the maximum instances to control cost.
+- [ ] **Slim the backend image.** It is ~9 GB mostly because `torch` pulls CUDA wheels, yet it is only used to load `.pth` models. Drop it, or install the CPU-only wheel, to speed up deploys and cold starts.
+- [ ] **Ship the models with the service.** Bake them into the image (versioned with the code) or mount them from GCS with a Cloud Storage FUSE volume.
+- [ ] **Use workload credentials.**
+  - Attach the service account to the Cloud Run services, leave `GCS_SERVICE_ACCOUNT` empty and stop mounting gcloud credentials.
+  - Set the project variables as service environment variables, with secrets in Secret Manager.
+- [ ] **Production entrypoint.** No `--reload` and no source bind mounts; run the code baked into the image.
+- [ ] **Direct uploads.** Have browsers upload to GCS with V4 signed URLs instead of streaming files through the API. This needs `iam.serviceAccounts.signBlob` on the service account.
+
+### Private PostgreSQL on Cloud SQL
+
+- [ ] **Private Cloud SQL instance.** Use Cloud SQL for PostgreSQL with the `vector` extension (pgvector is supported), private IP only and no public IP.
+- [ ] **Connect privately.** Reach it from Cloud Run over Direct VPC egress, with credentials from Secret Manager or IAM database authentication. Size connection pools so that instances × pool size stays under `max_connections`.
+- [ ] **Search in the database.** Identification and the duplicate-face check currently load every embedding into Python for each face (`store.all()`), so they slow down linearly with the number of users. Query nearest neighbors in SQL (`ORDER BY embedding <=> $1 LIMIT k`) with an HNSW index instead.
+- [ ] **Migrations and backups.** Replace `CREATE TABLE IF NOT EXISTS` at startup with versioned migrations (e.g. Alembic), and enable automated backups with point-in-time recovery.
+
+### Frontend and delivery
+
+- [ ] **Deploy the frontend** to Cloud Run (the standalone image already exists) or Firebase App Hosting.
+  - Set `BACKEND_PUBLIC_URL` and `CORS_ORIGINS`.
+  - Add the domain to Firebase's authorized domains.
+- [ ] **Infrastructure as code.** Define the bucket, service accounts, IAM, VPC, Cloud SQL, Cloud Run services and Cloud Tasks queue with Terraform, and deploy through CI/CD (Cloud Build or GitHub Actions + Artifact Registry).
+- [ ] **Observability.** Use structured logs, plus Cloud Monitoring alerts on latency, error rate and queue depth.
