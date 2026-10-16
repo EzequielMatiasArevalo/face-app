@@ -1,0 +1,54 @@
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.env.docker.example:/app/.env
+      - ./src:/app
+      - ./models:/app/models
+      - ./output:/app/output
+      - ./data:/app/data
+      # Credenciales por defecto de gcloud (solo lectura): el backend las usa únicamente para
+      # impersonar a la service account del bucket (GCS_SERVICE_ACCOUNT). Si se renuevan con
+      # `gcloud auth application-default login`, hay que recrear el contenedor.
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/secrets/gcloud-adc.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcloud-adc.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+  postgres:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-faces}
+      POSTGRES_USER: ${POSTGRES_USER:-faces_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-faces_pass}
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-faces_user}", "-d", "${POSTGRES_DB:-faces}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Next.js + Firebase Auth (frontend/). La config de Firebase y la URL del backend se toman
+  # de frontend/.env.local al construir la imagen. El navegador llama al backend en localhost:8000.
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
